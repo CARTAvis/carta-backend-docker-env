@@ -40,6 +40,18 @@ make -j 4
 6. At this point CARTA should be running with the default port 3002, waiting to connect to a carta-frontend running on your local system that is 
 listening for port 3002 (Of course, you can change the port number in the Dockerfile and docker run command if you wish), and start CARTA specifying the different port e.g. ```./CARTA --port=5000``` and similarly modyifing the hidden ```.env``` file in the carta-frontend to listen to the same port e.g. ```REACT_APP_DEFAULT_ADDRESS=ws://localhost:5000```
 
+---
+Similarly, for the Ubuntu version,
+build:
+```
+docker build -f Dockerfile-ubuntu -t asiaa-carta-backend-ubuntu .
+```
+and run:
+```
+docker run -p 3002:3002 -v ~/CARTA:/root/CARTA -ti asiaa-carta-backend-ubuntu
+```
+---
+
 Note: These are just basic instructions. Feel free to study and modify the Dockerfile if, for example, you want to use a different Qt version (in this case it uses Qt 5.9.4), test different library versions, mount your own local carta-backend directory, or incorporate the CARTA build steps as a script etc.
 
 
