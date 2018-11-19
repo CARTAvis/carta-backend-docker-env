@@ -1,0 +1,109 @@
+FROM centos:latest
+
+# Dockerfile to build ASIAA carta-backend on CentOS7 19-11-18
+
+# Install and activate devtoolset-7 to get a c++11 compatible gcc compiler
+RUN \
+  yum install -y wget && \
+  wget https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm && \
+  yum install -y epel-release-latest-7.noarch.rpm && \
+  yum install -y centos-release-scl && yum install -y devtoolset-7-gcc devtoolset-7-gcc-c++ \
+  devtoolset-7-make && \
+  echo "source scl_source enable devtoolset-7" >> /etc/bashrc
+
+# Add the CASA repository
+RUN \
+echo $'[casa] \n\
+name=CASA RPMs for RedHat Enterprise Linux 7 (x86_64) \n\
+baseurl=http://svn.cv.nrao.edu/casa/repo/el7/x86_64 \n\
+gpgkey=http://svn.cv.nrao.edu/casa/RPM-GPG-KEY-casa http://www.jpackage.org/jpackage.asc http://svn.cv.nrao.edu/casa/repo/el7/RPM-GPG-KEY-redhat-release http://svn.cv.nrao.edu/casa/repo/el7/RPM-GPG-KEY-EPEL \n\
+' > /etc/yum.repos.d/casa.repo
+
+# Install required packages
+RUN \
+  source /etc/bashrc && \
+  yum install -y wget unzip git cmake cmake3 flex flex-devel bison bison-devel blas-devel sqlite-devel \
+  autoconf automake blas-devel fontconfig freetype freetype-devel fontconfig-devel libstdc++ \
+  libX11 lapack-devel fftw fftw-devel boost-devel libX11-devel wcslib-devel gsl-devel \
+  cfitsio cfitsio-devel libxml2-devel libxslt-devel readline-devel libsakura svn pgplot-devel \
+  xerces-c-devel mesa-libGL-devel mesa-libGLU-devel rapidjson-devel openssl-devel && \
+  cp /usr/include/cfitsio/* /usr/include/
+
+# Install casacore and code
+RUN \
+  source /etc/bashrc && \
+  mkdir -p /cartawork/CARTAvis-externals/ThirdParty/casa && \
+  cd /cartawork/CARTAvis-externals/ThirdParty/casa && \
+  git clone --recursive https://github.com/CARTAvis/New-casa.git trunk && \
+  cd trunk/casacore && mkdir build && cd build && \
+  cmake -DBoost_NO_BOOST_CMAKE=1 -DCASA_BUILD=1 -DBUILD_TESTING=OFF -DUseCasacoreNamespace=1 \
+  -DCMAKE_INSTALL_PREFIX=../../linux -DBUILD_PYTHON=1 -DCMAKE_BUILD_TYPE=Release -DCXX11=1 .. && \
+  make -j 2 && make install && \ 
+  cd ../../code && mkdir build && cd build && \
+  cmake -DUseCrashReporter=0 -DBoost_NO_BOOST_CMAKE=1 -DEXTRA_C_FLAGS=-DPG_PPU \
+  -DUseCasacoreNamespace=1 \
+  -DLIBSAKURA_ROOT_DIR=/opt/casa/01/lib/libsakura/default/ \
+  -Darch=linux -DCMAKE_BUILD_TYPE=Release .. && make -j 2 && \
+  mkdir -p /cartawork/CARTAvis-externals/ThirdParty/casacore && \
+  mkdir -p /cartawork/CARTAvis-externals/ThirdParty/imageanalysis && \
+  cd /cartawork/CARTAvis-externals/ThirdParty/imageanalysis && \
+  ln -s /cartawork/CARTAvis-externals/ThirdParty/casa/trunk/linux/include/casacode/ include && \
+  ln -s /cartawork/CARTAvis-externals/ThirdParty/casa/trunk/linux/lib lib && \
+  cd ../casacore && \
+  ln -s /cartawork/CARTAvis-externals/ThirdParty/casa/trunk/linux/include/ include && \
+  ln -s /cartawork/CARTAvis-externals/ThirdParty/casa/trunk/linux/lib lib
+
+# Install Qt (courtesy of instructions from here: https://flames-of-code.netlify.com/blog/qt-on-docker)
+# Remember to place the 'qt-noninteractive.qs' file in the same directory as the Dockerfile
+ENV QT_VERSION_A=5.9
+ENV QT_VERSION_B=5.9.4
+ENV QT_VERSION_SCRIPT=594
+COPY qt-noninteractive.qs /qt-noninteractive.qs
+RUN source /etc/bashrc && \
+    wget https://download.qt.io/archive/qt/${QT_VERSION_A}/${QT_VERSION_B}/qt-opensource-linux-x64-${QT_VERSION_B}.run && \
+    chmod +x qt-opensource-linux-x64-${QT_VERSION_B}.run && \
+    ./qt-opensource-linux-x64-${QT_VERSION_B}.run --script qt-noninteractive.qs -platform minimal && \
+    rm qt-opensource-linux-x64-${QT_VERSION_B}.run && rm qt-noninteractive.qs
+
+# Install protobuffer
+RUN \
+  source /etc/bashrc && \
+  yum install -y autoconf automake libtool && \
+  cd /root && git clone https://github.com/protocolbuffers/protobuf.git && cd protobuf && \
+  ./autogen.sh && ./configure --prefix=/cartawork/CARTAvis-externals/ThirdParty/protobuf && \
+  make && make install
+
+# Install uWebSockets
+RUN \
+  source /etc/bashrc && \
+  cd /root && \
+  git clone https://github.com/uNetworking/uWebSockets.git && \
+  cd uWebSockets && git checkout v0.14 && cd .. && \
+  make default install -C uWebSockets && \
+  rm -rf uWebSockets
+
+# Install zfp
+RUN \
+  source /etc/bashrc && \
+  mv /usr/bin/cmake /usr/bin/cmake-orig && ln -s /usr/bin/cmake3 /usr/bin/cmake && \
+  cd /root && \
+  git clone https://github.com/LLNL/zfp.git && \
+  mkdir -p zfp/build && cd zfp/build && \
+  cmake .. && make all install && \
+  cd /root && rm -rf zfp
+
+# Download the measures data directory
+RUN \
+  source /etc/bashrc && \
+  cd /root && wget http://alma.asiaa.sinica.edu.tw/_downloads/measures_data.tar.gz && \
+  tar -xvf measures_data.tar.gz && mv measures_data data && rm measures_data.tar.gz
+
+EXPOSE 3002
+
+ENV PATH=/qt/5.9.4/gcc_64/bin:$PATH
+ENV LD_LIBRARY_PATH=/cartawork/CARTAvis-externals/ThirdParty/casacore/lib:$LD_LIBRARY_PATH
+ENV LD_LIBRARY_PATH=/cartawork/CARTAvis-externals/ThirdParty/protobuf/lib:$LD_LIBRARY_PATH
+ENV LD_LIBRARY_PATH=/usr/local/lib64:$LD_LIBRARY_PATH
+
+WORKDIR /cartawork
+
